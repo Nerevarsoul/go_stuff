@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -22,42 +24,59 @@ var cnf = &config.Config{
 	},
 }
 
-func Add(args ...int64) (int64, error) {
-	sum := int64(0)
-	for _, arg := range args {
-		sum += arg
-	}
-	return sum, nil
+func sendRequest(url string, data string) (*http.Response, error) {
+	fmt.Println(url)
+	fmt.Println(data)
+	d := []byte(data)
+	req, err := http.NewRequest("POST", "http://127.0.0.1:5000", bytes.NewBuffer(d))
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	return resp, err
+}
+
+type resStruct struct {
+	Url  string
+	Data json.RawMessage
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
+	fmt.Println(r.Body)
+	decoder := json.NewDecoder(r.Body)
+	var res resStruct
+	err := decoder.Decode(&res)
+
+	if err != nil {
+		fmt.Println(err)
+	}
 	server, err := machinery.NewServer(cnf)
 	if err != nil {
 		fmt.Println(err)
 	}
 
+	strData, err := json.Marshal(res.Data)
 	signature := &tasks.Signature{
-		Name: "add",
+		Name: "sendRequest",
 		Args: []tasks.Arg{
 			{
-				Type:  "int64",
-				Value: 1,
+				Type:  "string",
+				Value: res.Url,
 			},
 			{
-				Type:  "int64",
-				Value: 1,
+				Type:  "string",
+				Value: strData,
 			},
 		},
 	}
 
-	asyncResult, err_r := server.SendTask(signature)
-	if err_r != nil {
-		fmt.Println(err_r)
+	asyncResult, err := server.SendTask(signature)
+	if err != nil {
+		fmt.Println(err)
 	}
 
-	results, err_as := asyncResult.Get(time.Duration(time.Millisecond * 5))
-	if err_as != nil {
-		fmt.Errorf("Getting task result failed with error: %s", err_as.Error())
+	results, err := asyncResult.Get(time.Duration(time.Millisecond * 5))
+	if err != nil {
+		fmt.Errorf("Getting task result failed with error: %s", err.Error())
 	}
 	fmt.Println(tasks.HumanReadableResults(results))
 }
@@ -72,7 +91,7 @@ func listen(server *machinery.Server) {
 
 func runServer() {
 	http.HandleFunc("/", handler)
-	log.Fatal(http.ListenAndServe(":9002", nil))
+	log.Fatal(http.ListenAndServe(":9000", nil))
 }
 
 func main() {
@@ -82,6 +101,6 @@ func main() {
 	}
 
 	go runServer()
-	server.RegisterTask("add", Add)
+	server.RegisterTask("sendRequest", sendRequest)
 	listen(server)
 }
