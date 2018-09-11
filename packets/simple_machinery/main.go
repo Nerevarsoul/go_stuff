@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"time"
+        "sync"
 
 	"github.com/RichardKnop/machinery/v1"
 	"github.com/RichardKnop/machinery/v1/config"
@@ -81,26 +82,32 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	fmt.Println(tasks.HumanReadableResults(results))
 }
 
-func listen(server *machinery.Server) {
-	worker := server.NewWorker("worker_name", 10)
+func listen(wg *sync.WaitGroup, server *machinery.Server) {
+	defer wg.Done()
+        worker := server.NewWorker("worker_name", 10)
 	err := worker.Launch()
 	if err != nil {
 		fmt.Println(err)
 	}
 }
 
-func runServer() {
+func runServer(wg *sync.WaitGroup) {
+        defer wg.Done()
 	http.HandleFunc("/", handler)
 	log.Fatal(http.ListenAndServe(":9000", nil))
 }
 
 func main() {
-	server, err := machinery.NewServer(cnf)
+        var wg sync.WaitGroup
+ 	server, err := machinery.NewServer(cnf)
 	if err != nil {
 		fmt.Println(err)
 	}
 
-	go runServer()
+        wg.Add(1)
+	go runServer(&wg)
 	server.RegisterTask("sendRequest", sendRequest)
-	listen(server)
+	wg.Add(1)
+        go listen(&wg, server)
+        wg.Wait()
 }
